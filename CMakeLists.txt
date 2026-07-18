@@ -56,7 +56,7 @@ if(BRKBSC_BUILD_APP)
     endif()
 
     if(APPLE)
-        add_executable(brkbsc MACOSX_BUNDLE src/main.cpp)
+        add_executable(brkbsc MACOSX_BUNDLE src/main.cpp src/audio_runtime.cpp src/ui.cpp)
         set_target_properties(brkbsc PROPERTIES
             OUTPUT_NAME "BRKBSC"
             MACOSX_BUNDLE_BUNDLE_NAME "BRKBSC"
@@ -66,7 +66,7 @@ if(BRKBSC_BUILD_APP)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Info.plist.in"
         )
     else()
-        add_executable(brkbsc src/main.cpp)
+        add_executable(brkbsc src/main.cpp src/audio_runtime.cpp src/ui.cpp)
         set_target_properties(brkbsc PROPERTIES OUTPUT_NAME "brkbsc")
     endif()
 
