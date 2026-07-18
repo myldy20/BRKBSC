@@ -19,7 +19,9 @@ function(brkbsc_enable_warnings target)
 endfunction()
 
 add_library(brkbsc_core
-    src/core.cpp
+    src/pitch.cpp
+    src/phrase.cpp
+    src/composer.cpp
 )
 target_include_directories(brkbsc_core PUBLIC src)
 brkbsc_enable_warnings(brkbsc_core)
