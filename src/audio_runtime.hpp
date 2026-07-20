@@ -63,10 +63,11 @@ struct SharedState {
     std::atomic<std::uint32_t> onset_counter{0U};
     std::atomic<const AccompanimentPlan*> plan{nullptr};
     std::atomic<int> mode{0};
-    std::atomic<bool> output_enabled{true};
+    std::atomic<bool> output_enabled{false};
     std::atomic<bool> frozen{false};
     std::atomic<float> frozen_pitch_hz{110.0F};
     std::atomic<float> agency{0.45F};
+    std::atomic<std::uint32_t> role_mute_mask{0U};
     std::atomic<std::uint32_t> reset_counter{0U};
 };
 
@@ -77,6 +78,7 @@ public:
 private:
     float advance(float& phase, float frequency) noexcept;
     void trigger_step(const AccompanimentPlan& plan, int step) noexcept;
+    void reset_transport() noexcept;
     float render_compose() noexcept;
     float render_live() noexcept;
 
@@ -91,13 +93,10 @@ private:
     int step_ = 0;
     float bass_frequency_ = 65.4F;
     float counter_frequency_ = 261.6F;
-    float chord_root_frequency_ = 130.8F;
-    bool chord_minor_ = true;
+    std::array<float, kChordVoices> chord_frequency_{130.8F, 164.8F, 196.0F, 246.9F};
     float bass_phase_ = 0.0F;
     float counter_phase_ = 0.0F;
-    float pad_phase_a_ = 0.0F;
-    float pad_phase_b_ = 0.0F;
-    float pad_phase_c_ = 0.0F;
+    std::array<float, kChordVoices> chord_phase_{};
     float kick_phase_ = 0.0F;
     float bass_env_ = 0.0F;
     float counter_env_ = 0.0F;
