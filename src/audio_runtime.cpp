@@ -27,6 +27,16 @@ void AudioVoice::render(float* output, int frames, int channels) noexcept {
     const auto reset = state_.reset_counter.load(std::memory_order_acquire);
     if (reset != seen_reset_) {
         std::fill(delay_.begin(), delay_.end(), 0.0F);
+        delay_write_ = 0U;
+        step_samples_ = 0.0;
+        step_ = 0;
+        bass_env_ = 0.0F;
+        counter_env_ = 0.0F;
+        kick_env_ = 0.0F;
+        snare_env_ = 0.0F;
+        hat_env_ = 0.0F;
+        live_pulse_env_ = 0.0F;
+        drone_env_ = 0.0F;
         seen_reset_ = reset;
     }
     for (int frame = 0; frame < frames; ++frame) {
