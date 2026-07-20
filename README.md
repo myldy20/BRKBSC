@@ -25,7 +25,9 @@ The project deliberately starts with transparent, lightweight music algorithms. 
 - a dependency-free bitmap UI suitable for 1024×768;
 - core tests that do not require SDL2.
 
-It is an experiment, not a finished performance instrument. Pitch detection is currently monophonic, tempo is set manually, and the generated accompaniment is intentionally simple.
+The complete prototype has now been heard successfully on a MacBook. It starts silently, automatically mutes the old arrangement while recording a replacement phrase, and restarts a new plan from the beginning. TrimUI Brick hardware remains untested.
+
+It is an experiment, not a finished performance instrument. Pitch detection is currently monophonic, tempo is set manually, and the generated accompaniment is intentionally simple. The next stage replaces the single generic answer with controllable, role-based composition proposals.
 
 ## Quick start on macOS
 
@@ -33,6 +35,7 @@ It is an experiment, not a finished performance instrument. Pitch detection is c
 brew install cmake sdl2
 git clone https://github.com/myldy20/BRKBSC.git
 cd BRKBSC
+git switch prototype/0.1.0-alpha.1
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 open build/BRKBSC.app
@@ -66,6 +69,7 @@ Controller mappings on TrimUI Brick still need to be verified on real hardware.
 ## Documentation
 
 - [Product concept](docs/en/CONCEPT.md)
+- [AI companion design](docs/en/AI_COMPANION.md)
 - [Architecture](docs/en/ARCHITECTURE.md)
 - [Build and test guide](docs/en/BUILD.md)
 - [Roadmap](docs/en/ROADMAP.md)
