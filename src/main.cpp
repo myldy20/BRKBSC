@@ -41,6 +41,7 @@ int main(int, char**) {
     SDL_RenderSetLogicalSize(renderer, kWindowWidth, kWindowHeight);
 
     brkbsc::runtime::SharedState shared{};
+    shared.output_enabled.store(false);
     brkbsc::runtime::AudioVoice voice(shared);
     SDL_AudioSpec capture_wanted{};
     capture_wanted.freq = brkbsc::kSampleRate;
@@ -89,15 +90,15 @@ int main(int, char**) {
     auto install_plan = [&](brkbsc::AccompanimentPlan plan) {
         plans.push_back(std::make_unique<brkbsc::AccompanimentPlan>(std::move(plan)));
         shared.plan.store(plans.back().get(), std::memory_order_release);
+        shared.reset_counter.fetch_add(1U, std::memory_order_release);
     };
 
     int bpm = 90;
     std::uint32_t seed = 1U;
-    install_plan(composer.generate({}, bpm, seed));
     std::array<float, 2048> analysis_block{};
     brkbsc::AnalysisFrame latest{};
     bool running = true;
-    bool output_enabled = true;
+    bool output_enabled = false;
     const Uint64 performance_frequency = SDL_GetPerformanceFrequency();
     const Uint64 started = SDL_GetPerformanceCounter();
     auto now_seconds = [&]() {
@@ -111,24 +112,39 @@ int main(int, char**) {
             return;
         }
         if (!recorder.recording()) {
+            output_enabled = false;
+            shared.output_enabled.store(false);
+            shared.reset_counter.fetch_add(1U, std::memory_order_release);
             recorder.start(now_seconds(), bpm);
         } else {
             recorder.stop(now_seconds());
-            install_plan(composer.generate(recorder.notes(), bpm, ++seed));
-            output_enabled = true;
-            shared.output_enabled.store(true);
+            if (!recorder.notes().empty()) {
+                install_plan(composer.generate(recorder.notes(), bpm, ++seed));
+                output_enabled = true;
+                shared.output_enabled.store(true);
+            }
         }
     };
 
     auto change_mode = [&]() {
-        shared.mode.store(shared.mode.load() == 0 ? 1 : 0);
-        shared.reset_counter.fetch_add(1U);
+        const int next_mode = shared.mode.load() == 0 ? 1 : 0;
+        shared.mode.store(next_mode);
+        shared.reset_counter.fetch_add(1U, std::memory_order_release);
         if (recorder.recording()) recorder.stop(now_seconds());
+        output_enabled = next_mode == 1 || shared.plan.load(std::memory_order_acquire) != nullptr;
+        shared.output_enabled.store(output_enabled);
     };
 
     auto secondary_action = [&]() {
-        if (shared.mode.load() == 0) install_plan(composer.generate(recorder.notes(), bpm, ++seed));
-        else shared.reset_counter.fetch_add(1U);
+        if (shared.mode.load() == 0) {
+            if (!recorder.recording() && !recorder.notes().empty()) {
+                install_plan(composer.generate(recorder.notes(), bpm, ++seed));
+                output_enabled = true;
+                shared.output_enabled.store(true);
+            }
+        } else {
+            shared.reset_counter.fetch_add(1U, std::memory_order_release);
+        }
     };
 
     auto toggle_freeze = [&]() {
@@ -198,13 +214,15 @@ int main(int, char**) {
         brkbsc::ui::draw_text(renderer, 640, 178, brkbsc::ui::note_name(latest.pitch_hz), SDL_Color{236, 229, 200, 255}, 4);
 
         if (mode == 0) {
-            brkbsc::ui::draw_text(renderer, 48, 270, recorder.recording() ? "LISTENING" : "HUM A PHRASE", SDL_Color{220, 194, 156, 255}, 5);
+            brkbsc::ui::draw_text(renderer, 48, 270, recorder.recording() ? "LISTENING - OUTPUT MUTED" : "HUM A PHRASE", SDL_Color{220, 194, 156, 255}, 5);
             brkbsc::ui::draw_text(renderer, 48, 340, "A RECORD / STOP", SDL_Color{135, 145, 151, 255}, 3);
             brkbsc::ui::draw_text(renderer, 48, 385, "B NEW ACCOMPANIMENT", SDL_Color{135, 145, 151, 255}, 3);
             const auto* plan = shared.plan.load();
             if (plan != nullptr) {
                 const std::string key = std::string("KEY ") + brkbsc::pitch_class_name(plan->tonal.root_pitch_class) + (plan->tonal.minor ? " MINOR" : " MAJOR");
                 brkbsc::ui::draw_text(renderer, 48, 470, key, SDL_Color{185, 200, 194, 255}, 4);
+            } else {
+                brkbsc::ui::draw_text(renderer, 48, 470, "READY - NO ACCOMPANIMENT", SDL_Color{185, 200, 194, 255}, 3);
             }
         } else {
             brkbsc::ui::draw_text(renderer, 48, 270, shared.frozen.load() ? "GHOST FROZEN" : "GHOST LISTENING", SDL_Color{220, 194, 156, 255}, 5);
