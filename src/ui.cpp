@@ -32,7 +32,7 @@ std::array<std::uint8_t, 7> glyph(char c) {
     case '8': return G{14,17,17,14,17,17,14}; case '9': return G{14,17,17,15,1,1,14};
     case '#': return G{10,31,10,10,31,10,0}; case '-': return G{0,0,0,31,0,0,0};
     case ':': return G{0,4,4,0,4,4,0}; case '/': return G{1,2,2,4,8,8,16};
-    case '.': return G{0,0,0,0,0,4,4}; default: return G{};
+    case '>': return G{16,8,4,2,4,8,16}; default: return G{};
     }
 }
 }
