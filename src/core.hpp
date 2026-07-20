@@ -8,8 +8,20 @@
 
 namespace brkbsc {
 
-constexpr int kSteps = 16;
+constexpr int kSteps = 32;
 constexpr int kSampleRate = 48000;
+constexpr int kChordVoices = 4;
+
+enum class ProposalKind : std::uint8_t { Anchor = 0, Reframe = 1, Counter = 2, Break = 3 };
+enum class Role : std::uint8_t { Harmony = 0, Bass = 1, Rhythm = 2, Answer = 3 };
+
+struct Intent {
+    float contrary = 0.25F;
+    float drive = 0.45F;
+    float tension = 0.35F;
+    float density = 0.50F;
+    float evolution = 0.35F;
+};
 
 struct AnalysisFrame {
     float rms = 0.0F;
@@ -33,9 +45,10 @@ struct TonalEstimate {
 
 struct AccompanimentPlan {
     int bpm = 90;
+    ProposalKind kind = ProposalKind::Anchor;
+    Intent intent{};
     TonalEstimate tonal{};
-    std::array<int, kSteps> chord_root_midi{};
-    std::array<bool, kSteps> chord_minor{};
+    std::array<std::array<int, kChordVoices>, kSteps> chord_midi{};
     std::array<int, kSteps> bass_midi{};
     std::array<int, kSteps> counter_midi{};
     std::array<float, kSteps> kick{};
@@ -72,11 +85,18 @@ private:
 class Composer {
 public:
     [[nodiscard]] TonalEstimate estimate_tonality(const std::vector<NoteEvent>& notes) const;
-    [[nodiscard]] AccompanimentPlan generate(const std::vector<NoteEvent>& notes, int bpm, std::uint32_t seed) const;
+    [[nodiscard]] AccompanimentPlan generate(
+        const std::vector<NoteEvent>& notes,
+        int bpm,
+        std::uint32_t seed,
+        ProposalKind kind = ProposalKind::Anchor,
+        Intent intent = {}) const;
 };
 
 [[nodiscard]] float midi_to_hz(int midi) noexcept;
 [[nodiscard]] int hz_to_midi(float hz) noexcept;
 [[nodiscard]] const char* pitch_class_name(int pitch_class) noexcept;
+[[nodiscard]] const char* proposal_name(ProposalKind kind) noexcept;
+[[nodiscard]] const char* role_name(Role role) noexcept;
 
 } // namespace brkbsc
