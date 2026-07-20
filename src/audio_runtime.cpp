@@ -10,6 +10,7 @@ constexpr float kPi = 3.14159265358979323846F;
 float clamp(float value, float minimum, float maximum) noexcept { return std::max(minimum, std::min(maximum, value)); }
 float soft_clip(float sample) noexcept { return sample / (1.0F + std::abs(sample)); }
 float triangle(float phase) noexcept { const float wrapped = phase - std::floor(phase); return 4.0F * std::abs(wrapped - 0.5F) - 1.0F; }
+bool role_muted(std::uint32_t mask, Role role) noexcept { return (mask & (1U << static_cast<unsigned>(role))) != 0U; }
 }
 
 AudioVoice::AudioVoice(SharedState& state)
@@ -21,23 +22,27 @@ float AudioVoice::advance(float& phase, float frequency) noexcept {
     return phase;
 }
 
+void AudioVoice::reset_transport() noexcept {
+    std::fill(delay_.begin(), delay_.end(), 0.0F);
+    delay_write_ = 0U;
+    step_samples_ = 0.0;
+    step_ = 0;
+    bass_env_ = 0.0F;
+    counter_env_ = 0.0F;
+    kick_env_ = 0.0F;
+    snare_env_ = 0.0F;
+    hat_env_ = 0.0F;
+    live_pulse_env_ = 0.0F;
+    drone_env_ = 0.0F;
+}
+
 void AudioVoice::render(float* output, int frames, int channels) noexcept {
     const bool enabled = state_.output_enabled.load(std::memory_order_relaxed);
     const int mode = state_.mode.load(std::memory_order_relaxed);
     const auto reset = state_.reset_counter.load(std::memory_order_acquire);
     if (reset != seen_reset_) {
-        std::fill(delay_.begin(), delay_.end(), 0.0F);
-        delay_write_ = 0U;
-        step_samples_ = 0.0;
-        step_ = 0;
-        bass_env_ = 0.0F;
-        counter_env_ = 0.0F;
-        kick_env_ = 0.0F;
-        snare_env_ = 0.0F;
-        hat_env_ = 0.0F;
-        live_pulse_env_ = 0.0F;
-        drone_env_ = 0.0F;
         seen_reset_ = reset;
+        reset_transport();
     }
     for (int frame = 0; frame < frames; ++frame) {
         float sample = enabled ? (mode == 0 ? render_compose() : render_live()) : 0.0F;
@@ -57,11 +62,11 @@ void AudioVoice::trigger_step(const AccompanimentPlan& plan, int step) noexcept 
     }
     if (plan.counter_midi[index] >= 0) {
         counter_frequency_ = midi_to_hz(plan.counter_midi[index]);
-        counter_env_ = 0.55F;
+        counter_env_ = 0.62F;
     }
-    if (plan.chord_root_midi[index] >= 0) {
-        chord_root_frequency_ = midi_to_hz(plan.chord_root_midi[index]);
-        chord_minor_ = plan.chord_minor[index];
+    for (int voice = 0; voice < kChordVoices; ++voice) {
+        const int midi = plan.chord_midi[index][static_cast<std::size_t>(voice)];
+        if (midi >= 0) chord_frequency_[static_cast<std::size_t>(voice)] = midi_to_hz(midi);
     }
 }
 
@@ -79,29 +84,41 @@ float AudioVoice::render_compose() noexcept {
         trigger_step(*plan, step_);
     }
 
-    const float bass = triangle(advance(bass_phase_, bass_frequency_)) * bass_env_ * 0.25F;
-    bass_env_ *= 0.99945F;
-    const float third_ratio = chord_minor_ ? std::pow(2.0F, 3.0F / 12.0F) : std::pow(2.0F, 4.0F / 12.0F);
-    const float fifth_ratio = std::pow(2.0F, 7.0F / 12.0F);
-    const float pad = (std::sin(2.0F * kPi * advance(pad_phase_a_, chord_root_frequency_)) +
-        std::sin(2.0F * kPi * advance(pad_phase_b_, chord_root_frequency_ * third_ratio)) +
-        std::sin(2.0F * kPi * advance(pad_phase_c_, chord_root_frequency_ * fifth_ratio))) * 0.045F;
-    const float counter = std::sin(2.0F * kPi * advance(counter_phase_, counter_frequency_)) * counter_env_ * 0.12F;
-    counter_env_ *= 0.9991F;
-    const float kick_frequency = 48.0F + 90.0F * kick_env_;
-    const float kick = std::sin(2.0F * kPi * advance(kick_phase_, kick_frequency)) * kick_env_ * 0.72F;
-    kick_env_ *= 0.9972F;
+    const std::uint32_t mute_mask = state_.role_mute_mask.load(std::memory_order_relaxed);
+    float harmony = 0.0F;
+    if (!role_muted(mute_mask, Role::Harmony)) {
+        for (int voice = 0; voice < kChordVoices; ++voice) {
+            const float tone = voice == 0
+                ? triangle(advance(chord_phase_[static_cast<std::size_t>(voice)], chord_frequency_[static_cast<std::size_t>(voice)]))
+                : std::sin(2.0F * kPi * advance(chord_phase_[static_cast<std::size_t>(voice)], chord_frequency_[static_cast<std::size_t>(voice)]));
+            harmony += tone * (voice == 0 ? 0.030F : 0.026F);
+        }
+    }
 
+    float bass = 0.0F;
+    if (!role_muted(mute_mask, Role::Bass)) bass = triangle(advance(bass_phase_, bass_frequency_)) * bass_env_ * 0.24F;
+    bass_env_ *= 0.99945F;
+
+    float answer = 0.0F;
+    if (!role_muted(mute_mask, Role::Answer)) answer = std::sin(2.0F * kPi * advance(counter_phase_, counter_frequency_)) * counter_env_ * 0.11F;
+    counter_env_ *= 0.9991F;
+
+    float rhythm = 0.0F;
+    const float kick_frequency = 46.0F + 96.0F * kick_env_;
+    const float kick = std::sin(2.0F * kPi * advance(kick_phase_, kick_frequency)) * kick_env_ * 0.70F;
+    kick_env_ *= 0.9972F;
     noise_state_ ^= noise_state_ << 13U;
     noise_state_ ^= noise_state_ >> 17U;
     noise_state_ ^= noise_state_ << 5U;
     const float noise = static_cast<float>(static_cast<std::int32_t>(noise_state_)) / static_cast<float>(0x7fffffff);
-    const float snare = noise * snare_env_ * 0.25F;
-    const float hat = (noise - previous_noise_) * hat_env_ * 0.16F;
+    const float snare = noise * snare_env_ * 0.24F;
+    const float hat = (noise - previous_noise_) * hat_env_ * 0.15F;
     previous_noise_ = noise;
     snare_env_ *= 0.9925F;
     hat_env_ *= 0.965F;
-    return bass + pad + counter + kick + snare + hat;
+    if (!role_muted(mute_mask, Role::Rhythm)) rhythm = kick + snare + hat;
+
+    return harmony + bass + answer + rhythm;
 }
 
 float AudioVoice::render_live() noexcept {
@@ -111,11 +128,8 @@ float AudioVoice::render_live() noexcept {
     float pitch = state_.pitch_hz.load(std::memory_order_relaxed);
     const float confidence = state_.pitch_confidence.load(std::memory_order_relaxed);
     const bool frozen = state_.frozen.load(std::memory_order_relaxed);
-    if (frozen) {
-        pitch = state_.frozen_pitch_hz.load(std::memory_order_relaxed);
-    } else if (confidence > 0.20F && pitch > 55.0F && pitch < 1200.0F) {
-        live_pitch_ += (pitch - live_pitch_) * 0.0009F;
-    }
+    if (frozen) pitch = state_.frozen_pitch_hz.load(std::memory_order_relaxed);
+    else if (confidence > 0.20F && pitch > 55.0F && pitch < 1200.0F) live_pitch_ += (pitch - live_pitch_) * 0.0009F;
     pitch = clamp(frozen ? pitch : live_pitch_, 45.0F, 880.0F);
 
     const float rms = state_.rms.load(std::memory_order_relaxed);
@@ -131,8 +145,7 @@ float AudioVoice::render_live() noexcept {
         event_flip_ = !event_flip_;
     }
     const float pulse_frequency = event_flip_ ? 58.0F : 73.0F;
-    const float pulse = std::sin(2.0F * kPi * advance(live_pulse_phase_, pulse_frequency)) *
-        live_pulse_env_ * (0.18F + agency * 0.22F);
+    const float pulse = std::sin(2.0F * kPi * advance(live_pulse_phase_, pulse_frequency)) * live_pulse_env_ * (0.18F + agency * 0.22F);
     live_pulse_env_ *= 0.997F;
 
     const std::size_t write = delay_write_;
