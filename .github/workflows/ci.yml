@@ -1,0 +1,30 @@
+name: build-and-test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure core
+        run: cmake -S . -B build-core -DBRKBSC_BUILD_APP=OFF -DBRKBSC_BUILD_TESTS=ON
+      - name: Build core
+        run: cmake --build build-core -j2
+      - name: Test core
+        run: ctest --test-dir build-core --output-on-failure
+
+  build-sdl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: Configure application
+        run: cmake -S . -B build-app -DBRKBSC_BUILD_APP=ON -DBRKBSC_BUILD_TESTS=ON
+      - name: Build application
+        run: cmake --build build-app -j2
+      - name: Test core in full build
+        run: ctest --test-dir build-app --output-on-failure
